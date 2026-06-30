@@ -10,12 +10,14 @@
 #include "Mod.h"
 #include "hooks/EnchantHooks.h"
 
-// pl/Logger.h uses std::vformat/std::make_format_args without including
-// <format>; include it before the SDK headers so the logger compiles.
-#include <format>
-
 #include <pl/cpp/Mod.hpp>
 #include <pl/cpp/mod/RegisterHelper.hpp>
+
+// The SDK logger (pl/Logger.h) relies on std::vformat, which libc++ in the
+// targeted NDK does not provide; log via Android's facility instead.
+#include <android/log.h>
+
+#define FE_LOG_TAG "ForceEnchant"
 
 namespace fe {
 
@@ -25,22 +27,19 @@ ForceEnchantMod& ForceEnchantMod::getInstance() {
 }
 
 bool ForceEnchantMod::load() {
-    if (auto mod = pl::mod::NativeMod::current()) {
-        mod->getLogger().info("[ForceEnchant] Loaded");
-    }
+    __android_log_print(ANDROID_LOG_INFO, FE_LOG_TAG, "Loaded");
     return true;
 }
 
 bool ForceEnchantMod::enable() {
     int installed = hooks::installEnchantHooks();
-    if (auto mod = pl::mod::NativeMod::current()) {
-        if (installed > 0) {
-            mod->getLogger().info("[ForceEnchant] Enabled (enchant limit removed)");
-        } else {
-            mod->getLogger().warn("[ForceEnchant] Enabled but NO hooks installed - "
-                                  "verify signatures in src/Signatures.h for your "
-                                  "Minecraft Bedrock version.");
-        }
+    if (installed > 0) {
+        __android_log_print(ANDROID_LOG_INFO, FE_LOG_TAG,
+                            "Enabled (enchant limit removed)");
+    } else {
+        __android_log_print(ANDROID_LOG_WARN, FE_LOG_TAG,
+                            "Enabled but NO hooks installed - verify signatures "
+                            "in src/Signatures.h for your Minecraft Bedrock version.");
     }
     enabled_ = installed > 0;
     return true;
@@ -49,9 +48,7 @@ bool ForceEnchantMod::enable() {
 bool ForceEnchantMod::disable() {
     hooks::removeEnchantHooks();
     enabled_ = false;
-    if (auto mod = pl::mod::NativeMod::current()) {
-        mod->getLogger().info("[ForceEnchant] Disabled");
-    }
+    __android_log_print(ANDROID_LOG_INFO, FE_LOG_TAG, "Disabled");
     return true;
 }
 

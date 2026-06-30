@@ -39,6 +39,9 @@ target_include_directories(forceenchant PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
+# Android logging facility (__android_log_print).
+target_link_libraries(forceenchant PRIVATE log)
+
 target_compile_options(forceenchant PRIVATE
     -O2
     -fvisibility=hidden
