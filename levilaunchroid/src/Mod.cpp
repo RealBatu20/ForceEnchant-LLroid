@@ -10,6 +10,10 @@
 #include "Mod.h"
 #include "hooks/EnchantHooks.h"
 
+// pl/Logger.h uses std::vformat/std::make_format_args without including
+// <format>; include it before the SDK headers so the logger compiles.
+#include <format>
+
 #include <pl/cpp/Mod.hpp>
 #include <pl/cpp/mod/RegisterHelper.hpp>
 
@@ -21,7 +25,7 @@ ForceEnchantMod& ForceEnchantMod::getInstance() {
 }
 
 bool ForceEnchantMod::load() {
-    if (auto* mod = pl::mod::NativeMod::current()) {
+    if (auto mod = pl::mod::NativeMod::current()) {
         mod->getLogger().info("[ForceEnchant] Loaded");
     }
     return true;
@@ -29,7 +33,7 @@ bool ForceEnchantMod::load() {
 
 bool ForceEnchantMod::enable() {
     int installed = hooks::installEnchantHooks();
-    if (auto* mod = pl::mod::NativeMod::current()) {
+    if (auto mod = pl::mod::NativeMod::current()) {
         if (installed > 0) {
             mod->getLogger().info("[ForceEnchant] Enabled (enchant limit removed)");
         } else {
@@ -45,7 +49,7 @@ bool ForceEnchantMod::enable() {
 bool ForceEnchantMod::disable() {
     hooks::removeEnchantHooks();
     enabled_ = false;
-    if (auto* mod = pl::mod::NativeMod::current()) {
+    if (auto mod = pl::mod::NativeMod::current()) {
         mod->getLogger().info("[ForceEnchant] Disabled");
     }
     return true;
