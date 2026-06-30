@@ -1,0 +1,24 @@
+{
+    // ForceEnchant signature configuration.
+    //
+    // Each "signature" is passed to LeviLaunchroid's pl::signature::resolveSignature
+    // against libminecraftpe.so. It may be EITHER:
+    //   * a symbol name        e.g. "_ZN12EnchantUtils10canEnchant..."   or
+    //   * an arm64-v8a pattern e.g. "FF 83 01 D1 ?? ?? ?? ?? 1F 20 03 D5"
+    //
+    // These fields are intentionally EMPTY. ForceEnchant stays inactive (and logs a
+    // clear message) until you fill them in for YOUR exact Minecraft version.
+    // See docs/SIGNATURES.md for the step-by-step IDA Pro / Ghidra workflow.
+    "hooks": {
+        // Command::validRange — makes /enchant accept any level (no bounds check).
+        "validRange": {
+            "enabled": true,
+            "signature": ""
+        },
+        // EnchantUtils::canEnchant — allows non-vanilla item/enchant combinations.
+        "canEnchant": {
+            "enabled": true,
+            "signature": ""
+        }
+    }
+}

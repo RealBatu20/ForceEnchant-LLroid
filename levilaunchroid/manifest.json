@@ -1,0 +1,9 @@
+{
+    "type": "preload-native",
+    "name": "ForceEnchant",
+    "author": "ikakusa (Java/Win original) — LeviLaunchroid port",
+    "version": "1.0.0",
+    "entry": "libforceenchant.so",
+    "description": "Removes the level limit on /enchant and lets any enchantment be applied to any item (Bedrock-native port of the Windows ForceEnchant mod).",
+    "minecraft_versions": ["1.21.120"]
+}

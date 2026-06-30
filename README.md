@@ -1,6 +1,13 @@
 # Force Enchant
 ### Extension to remove the limit on the level of enchantment of an item for minecraft bedrock edition written in c++
 
+> **Android / LeviLaunchroid port:** a Bedrock-native reimplementation for
+> [LeviLaunchroid](https://levilaunchroid.levimc.org) (arm64-v8a,
+> `libforceenchant.so`) lives in [`levilaunchroid/`](levilaunchroid/). See
+> [`levilaunchroid/README.md`](levilaunchroid/README.md) and
+> [`levilaunchroid/docs/CONVERSION_REPORT.md`](levilaunchroid/docs/CONVERSION_REPORT.md).
+> The original Windows project (below) stays in [`ForceEnchant/`](ForceEnchant/).
+
 # How to use
 
 ### You can use this extension by the injector

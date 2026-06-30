@@ -1,0 +1,7 @@
+build/
+dist/
+*.so
+*.levipack
+third_party/levilaunchroid-sdk/
+.cache/
+compile_commands.json

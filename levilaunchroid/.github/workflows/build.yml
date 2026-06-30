@@ -1,0 +1,75 @@
+name: Build ForceEnchant (LeviLaunchroid)
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths:
+      - "levilaunchroid/**"
+      - ".github/workflows/build.yml"
+  pull_request:
+    paths:
+      - "levilaunchroid/**"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: levilaunchroid
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build cmake
+
+      - name: Set up Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
+          local-cache: true
+
+      - name: Configure
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-21 \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel --verbose
+
+      - name: Stage .levipack contents
+        run: |
+          mkdir -p dist/forceenchant/config
+          cp build/libforceenchant.so dist/forceenchant/
+          cp manifest.json            dist/forceenchant/
+          cp config/config.json       dist/forceenchant/config/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: forceenchant-arm64-v8a
+          path: levilaunchroid/dist/forceenchant
+          if-no-files-found: error
+
+      - name: Package release archive
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd dist && zip -r ../forceenchant-${{ github.ref_name }}.levipack forceenchant
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: levilaunchroid/forceenchant-${{ github.ref_name }}.levipack
+          generate_release_notes: true
