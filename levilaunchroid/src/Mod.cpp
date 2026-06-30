@@ -10,11 +10,15 @@
 #include "Mod.h"
 #include "hooks/EnchantHooks.h"
 
+// pl/Logger.h uses std::vformat as a non-dependent name; include <format>
+// first and build with an NDK whose libc++ provides it (r28+, see CI).
+#include <format>
+
 #include <pl/cpp/Mod.hpp>
 #include <pl/cpp/mod/RegisterHelper.hpp>
 
-// The SDK logger (pl/Logger.h) relies on std::vformat, which libc++ in the
-// targeted NDK does not provide; log via Android's facility instead.
+// Our own log lines go through Android's facility, independent of the SDK
+// logger's formatting path.
 #include <android/log.h>
 
 #define FE_LOG_TAG "ForceEnchant"

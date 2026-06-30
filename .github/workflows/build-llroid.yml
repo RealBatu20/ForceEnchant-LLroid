@@ -26,7 +26,10 @@ jobs:
         id: ndk
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26d
+          # r28 ships Clang 19 whose libc++ provides a complete <format>
+          # (std::vformat / std::make_format_args), which the SDK's pl/Logger.h
+          # relies on. Earlier NDKs (r26/Clang 17) fail to even parse it.
+          ndk-version: r28
 
       - name: Build (arm64-v8a)
         env:

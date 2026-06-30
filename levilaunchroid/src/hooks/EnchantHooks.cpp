@@ -38,6 +38,11 @@
 #include "../Signatures.h"
 #include "../sdk/Enchant.h"
 
+// pl/Logger.h uses std::vformat/std::make_format_args as non-dependent names,
+// so it must be parsed against a libc++ that declares them; include <format>
+// first and build with an NDK whose libc++ provides it (r28+, see CI).
+#include <format>
+
 #include <pl/cpp/Hook.hpp>
 #include <pl/cpp/Mod.hpp>
 #include <pl/cpp/Signature.hpp>
@@ -45,10 +50,8 @@
 #include <android/log.h>
 #include <cstdint>
 
-// The SDK logger (pl/Logger.h) is built on std::vformat/std::make_format_args,
-// which libc++ in the targeted NDK does not provide. To stay NDK-agnostic we
-// log through Android's own logging facility instead of instantiating the SDK
-// logger template.
+// We still emit our own log lines through Android's facility rather than the
+// SDK logger, keeping output independent of the SDK formatting path.
 #define FE_LOG_TAG "ForceEnchant"
 
 namespace fe::hooks {
