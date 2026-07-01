@@ -36,28 +36,27 @@ bool ForceEnchantMod::load() {
 }
 
 bool ForceEnchantMod::enable() {
-    int installed = hooks::installEnchantHooks();
-    if (installed > 0) {
+    enabled_ = hooks::installEnchantPatch();
+    if (enabled_) {
         __android_log_print(ANDROID_LOG_INFO, FE_LOG_TAG,
                             "Enabled (enchant limit removed)");
     } else {
         __android_log_print(ANDROID_LOG_WARN, FE_LOG_TAG,
-                            "Enabled but NO hooks installed - verify signatures "
+                            "Enabled but patch NOT applied - update the pattern "
                             "in src/Signatures.h for your Minecraft Bedrock version.");
     }
-    enabled_ = installed > 0;
     return true;
 }
 
 bool ForceEnchantMod::disable() {
-    hooks::removeEnchantHooks();
+    // The patch is a single-instruction NOP; it is left in place for the
+    // process lifetime (the game reloads the library fresh on next launch).
     enabled_ = false;
     __android_log_print(ANDROID_LOG_INFO, FE_LOG_TAG, "Disabled");
     return true;
 }
 
 bool ForceEnchantMod::unload() {
-    hooks::removeEnchantHooks();
     return true;
 }
 

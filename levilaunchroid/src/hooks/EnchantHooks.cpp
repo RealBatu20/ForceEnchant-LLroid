@@ -4,164 +4,87 @@
 //  ForceEnchant - native enchant-limit removal for Minecraft Bedrock (Android)
 // =============================================================================
 //
-//  Behaviour ported 1:1 from the upstream Windows DLL
-//  (ForceEnchant/Force/Hooks/...):
+//  In this Minecraft Bedrock build, ItemEnchants::canEnchant and the enchant
+//  level-range validation are inlined into EnchantCommand::execute (verified by
+//  disassembly of the target libminecraftpe.so). There is no standalone
+//  function to hook, so instead of GlossHook we apply a single, reversible
+//  in-memory patch: NOP the branch that routes a "cannot enchant / over-limit"
+//  result to the reject path, so the enchantment falls through to the apply
+//  path. See src/Signatures.h for the byte pattern and full analysis.
 //
-//   1. ItemEnchants::canEnchant  -> force the `allowNonVanilla` argument to true
-//      so enchantments above the vanilla level cap / non-vanilla combinations
-//      are accepted by the engine's enchant-application path.
+//  Safety: if the signature does not resolve, nothing is written. The patch
+//  touches exactly 4 bytes (one instruction) and restores page protection.
 //
-//   2. CommandUtils::validRange  -> short-circuit the range validation used by
-//      `/enchant` so that out-of-range level arguments no longer raise
-//      "commands.enchant.invalidLevel".
-//
-//  CALLING CONVENTION NOTE (Windows -> Android)
-//  --------------------------------------------
-//  The Windows build used __fastcall and an explicit `__int64 _this`. On
-//  AArch64 there is a single standard calling convention (AAPCS64): the implicit
-//  `this` pointer is simply the first argument in x0. The detour signatures
-//  below therefore use plain C++ functions whose first parameter is the object
-//  pointer for member functions. No __fastcall / no MinHook is involved; hooks
-//  go through Levi Launchroid's Gloss-backed pl::hook API.
-//
-//  COMPLIANCE
-//  ----------
-//  This reimplements the exact, unmodified intent of the open-source upstream
-//  project (removing the enchantment level limit for the local client). It uses
-//  only documented Levi Launchroid APIs and reversible function hooks. It does
-//  not read other players' data, automate combat, evade anti-cheat, or perform
-//  any packet abuse.
+//  COMPLIANCE: reimplements the intent of the open-source upstream ForceEnchant
+//  (remove the enchant level limit for the local client). Reversible, single
+//  instruction, no packet abuse, no anti-cheat evasion, no remote access.
 // =============================================================================
 
 #include "EnchantHooks.h"
 
 #include "../Signatures.h"
-#include "../sdk/Enchant.h"
 
-// pl/Logger.h uses std::vformat/std::make_format_args as non-dependent names,
-// so it must be parsed against a libc++ that declares them; include <format>
-// first and build with an NDK whose libc++ provides it (r28+, see CI).
-#include <format>
-
-#include <pl/cpp/Hook.hpp>
-#include <pl/cpp/Mod.hpp>
 #include <pl/cpp/Signature.hpp>
 
 #include <android/log.h>
-#include <cstdint>
+#include <sys/mman.h>
+#include <unistd.h>
 
-// We still emit our own log lines through Android's facility rather than the
-// SDK logger, keeping output independent of the SDK formatting path.
-#define FE_LOG_TAG "ForceEnchant"
+#include <cstdint>
+#include <cstring>
 
 namespace fe::hooks {
 namespace {
 
-using fe::sdk::EnchantmentInstance;
-using fe::sdk::EnchantResult;
+constexpr const char* kTag = "ForceEnchant";
 
-// ---- Original function pointers (filled in by pl::hook::hook) ----------------
+// Make [addr, addr+len) writable, copy `bytes`, flush icache, restore R+X.
+bool patchBytes(uintptr_t addr, const uint8_t* bytes, size_t len) {
+    const size_t pageSize = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+    const uintptr_t pageStart = addr & ~(pageSize - 1);
+    // The patch may straddle a page boundary; cover two pages to be safe.
+    const size_t span = (addr + len) - pageStart;
 
-using CanEnchantFn = EnchantResult* (*)(void* self,
-                                        EnchantResult* out,
-                                        EnchantmentInstance* inst,
-                                        bool allowNonVanilla);
+    if (mprotect(reinterpret_cast<void*>(pageStart), span,
+                 PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        return false;
+    }
 
-using ValidRangeFn = bool (*)(int value, int low, int high, void* outName);
+    std::memcpy(reinterpret_cast<void*>(addr), bytes, len);
+    __builtin___clear_cache(reinterpret_cast<char*>(addr),
+                            reinterpret_cast<char*>(addr + len));
 
-CanEnchantFn g_origCanEnchant = nullptr;
-ValidRangeFn g_origValidRange = nullptr;
-
-// Resolved target addresses, kept so removeEnchantHooks() can unhook cleanly.
-uintptr_t g_canEnchantAddr = 0;
-uintptr_t g_validRangeAddr = 0;
-
-inline void logInfo(const char* msg) {
-    __android_log_print(ANDROID_LOG_INFO, FE_LOG_TAG, "%s", msg);
-}
-
-inline void logWarn(const char* msg) {
-    __android_log_print(ANDROID_LOG_WARN, FE_LOG_TAG, "%s", msg);
-}
-
-// ---- Detours -----------------------------------------------------------------
-
-// Force allowNonVanilla = true so the engine accepts above-cap enchantments.
-EnchantResult* hookCanEnchant(void* self,
-                              EnchantResult* out,
-                              EnchantmentInstance* inst,
-                              bool /*allowNonVanilla*/) {
-    return g_origCanEnchant(self, out, inst, /*allowNonVanilla=*/true);
-}
-
-// Report every level as in-range so /enchant never rejects the level argument.
-bool hookValidRange(int /*value*/, int /*low*/, int /*high*/, void* /*outName*/) {
+    // Restore to executable + readable (drop write).
+    mprotect(reinterpret_cast<void*>(pageStart), span,
+             PROT_READ | PROT_EXEC);
     return true;
 }
 
 } // namespace
 
-int installEnchantHooks() {
-    int installed = 0;
-
-    // --- ItemEnchants::canEnchant ------------------------------------------
-    g_canEnchantAddr = pl::signature::resolveSignature(fe::sig::kCanEnchant,
-                                                       fe::sig::kModule);
-    if (g_canEnchantAddr != 0) {
-        int rc = pl::hook::hook(
-            reinterpret_cast<void*>(g_canEnchantAddr),
-            reinterpret_cast<void*>(&hookCanEnchant),
-            reinterpret_cast<void**>(&g_origCanEnchant),
-            pl::hook::PriorityNormal);
-        if (rc == 0 && g_origCanEnchant != nullptr) {
-            logInfo("[ForceEnchant] Hooked ItemEnchants::canEnchant");
-            ++installed;
-        } else {
-            g_canEnchantAddr = 0;
-            logWarn("[ForceEnchant] Failed to install canEnchant hook");
-        }
-    } else {
-        logWarn("[ForceEnchant] Could not resolve canEnchant signature "
-                "(update src/Signatures.h for your MC version)");
+bool installEnchantPatch() {
+    const uintptr_t base =
+        pl::signature::resolveSignature(fe::sig::kEnchantRoutePattern,
+                                        fe::sig::kModule);
+    if (base == 0) {
+        __android_log_print(ANDROID_LOG_WARN, kTag,
+                            "Could not resolve enchant-route pattern "
+                            "(update src/Signatures.h for your MC version)");
+        return false;
     }
 
-    // --- CommandUtils::validRange ------------------------------------------
-    g_validRangeAddr = pl::signature::resolveSignature(fe::sig::kValidRange,
-                                                       fe::sig::kModule);
-    if (g_validRangeAddr != 0) {
-        int rc = pl::hook::hook(
-            reinterpret_cast<void*>(g_validRangeAddr),
-            reinterpret_cast<void*>(&hookValidRange),
-            reinterpret_cast<void**>(&g_origValidRange),
-            pl::hook::PriorityNormal);
-        if (rc == 0 && g_origValidRange != nullptr) {
-            logInfo("[ForceEnchant] Hooked CommandUtils::validRange");
-            ++installed;
-        } else {
-            g_validRangeAddr = 0;
-            logWarn("[ForceEnchant] Failed to install validRange hook");
-        }
-    } else {
-        logWarn("[ForceEnchant] Could not resolve validRange signature "
-                "(update src/Signatures.h for your MC version)");
+    const uintptr_t tbnzAddr = base + fe::sig::kTbnzOffset;
+    if (!patchBytes(tbnzAddr, fe::sig::kNop, sizeof(fe::sig::kNop))) {
+        __android_log_print(ANDROID_LOG_WARN, kTag,
+                            "Failed to patch enchant-route branch at %p",
+                            reinterpret_cast<void*>(tbnzAddr));
+        return false;
     }
 
-    return installed;
-}
-
-void removeEnchantHooks() {
-    if (g_canEnchantAddr != 0) {
-        pl::hook::unhook(reinterpret_cast<void*>(g_canEnchantAddr),
-                         reinterpret_cast<void*>(&hookCanEnchant));
-        g_canEnchantAddr = 0;
-        g_origCanEnchant = nullptr;
-    }
-    if (g_validRangeAddr != 0) {
-        pl::hook::unhook(reinterpret_cast<void*>(g_validRangeAddr),
-                         reinterpret_cast<void*>(&hookValidRange));
-        g_validRangeAddr = 0;
-        g_origValidRange = nullptr;
-    }
+    __android_log_print(ANDROID_LOG_INFO, kTag,
+                        "Patched enchant-route branch at %p (limit removed)",
+                        reinterpret_cast<void*>(tbnzAddr));
+    return true;
 }
 
 } // namespace fe::hooks
