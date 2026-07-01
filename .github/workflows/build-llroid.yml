@@ -8,6 +8,11 @@ on:
       - "levilaunchroid/**"
       - ".github/workflows/build-llroid.yml"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publish a GitHub Release under this tag (e.g. v1.0.0). Leave blank to build only. The tag is created by the Actions runner, so no local tag push is needed."
+        required: false
+        default: ""
 
 jobs:
   build:
@@ -49,7 +54,8 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Publish on a pushed v* tag, or on a manual run that supplies release_tag.
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -63,6 +69,10 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          # For tag pushes this is the pushed tag; for manual runs the runner
+          # creates this tag itself using GITHUB_TOKEN (contents: write above),
+          # so no local tag push is required.
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: |
             release/**/libforceenchant.so
             release/**/ForceEnchant.levipack
