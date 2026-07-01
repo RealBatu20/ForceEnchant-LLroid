@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "type": "preload-native",
+  "name": "ForceEnchant",
+  "id": "force_enchant",
+  "version": "1.0.0",
+  "author": "ikakusa (port)",
+  "description": "Removes the enchantment level limit so /enchant accepts above-vanilla levels. Native Android port of the Windows ForceEnchant mod.",
+  "entry": "libforceenchant.so"
+}

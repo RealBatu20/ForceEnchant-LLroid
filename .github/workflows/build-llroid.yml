@@ -1,0 +1,69 @@
+name: Build ForceEnchant (Levi Launchroid)
+
+on:
+  push:
+    branches: [ "**" ]
+    tags: [ "v*" ]
+    paths:
+      - "levilaunchroid/**"
+      - ".github/workflows/build-llroid.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: levilaunchroid
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build zip
+
+      - name: Set up Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          # r28 ships Clang 19 whose libc++ provides a complete <format>
+          # (std::vformat / std::make_format_args), which the SDK's pl/Logger.h
+          # relies on. Earlier NDKs (r26/Clang 17) fail to even parse it.
+          ndk-version: r28
+
+      - name: Build (arm64-v8a)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          chmod +x build.sh
+          ABI=arm64-v8a ./build.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ForceEnchant-llroid
+          path: |
+            levilaunchroid/build/libforceenchant.so
+            levilaunchroid/dist/ForceEnchant.levipack
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ForceEnchant-llroid
+          path: release
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/**/libforceenchant.so
+            release/**/ForceEnchant.levipack
+          generate_release_notes: true
