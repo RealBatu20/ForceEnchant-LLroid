@@ -114,6 +114,7 @@ git push origin v1.0.0
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| `dlopen failed: cannot locate symbol _ZN2pl9signature16resolveSignature...` | Mod not linked against `libpreloader.so` (no `DT_NEEDED`) | Fixed by the build here — CMake links the SDK's `preloader` target so the pl:: symbols resolve at load |
 | Log: `Could not resolve … signature` | Symbol names in `Signatures.h` don't match your MC version | Re-verify in IDA, update `Signatures.h` (Section 4) |
 | `Enabled but NO hooks installed` | Both signatures failed | Same as above |
 | `/enchant` still rejects high levels | `validRange` hook not installed, or version mismatch | Verify the `validRange` signature |

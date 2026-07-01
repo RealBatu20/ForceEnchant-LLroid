@@ -2,7 +2,7 @@
 #  ForceEnchant - Levi Launchroid native mod (Android arm64-v8a)
 #  Output: libforceenchant.so
 # =============================================================================
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.22)
 
 project(forceenchant LANGUAGES CXX)
 
@@ -11,23 +11,34 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # -----------------------------------------------------------------------------
-#  Levi Launchroid SDK headers (pl/cpp/*.hpp from LiteLDev/preloader-android).
+#  Levi Launchroid SDK (LiteLDev/preloader-android).
 #
-#  Provide the include directory via -DLL_SDK_DIR=/path/to/sdk so that
-#  ${LL_SDK_DIR}/pl/cpp/Mod.hpp resolves. The CI workflow and build.sh fetch
-#  this automatically. The preloader supplies the pl::* symbols at load time,
-#  so the mod links with undefined symbols allowed (no import library needed).
+#  The pl:: API is split: pl::hook::hook / NativeMod / Logger are header-only,
+#  but pl::signature::resolveSignature and the C entry points (pl_hook,
+#  pl_resolve_signature) are exported from libpreloader.so. A mod MUST link
+#  against that library, otherwise dlopen fails at load with
+#  "cannot locate symbol _ZN2pl9signature16resolveSignature...".
+#
+#  We build the SDK's `preloader` target here so that:
+#    * headers resolve via its PUBLIC include dir (its `src`),
+#    * pl:: symbols resolve at link time, and
+#    * libforceenchant.so records DT_NEEDED libpreloader.so, which the launcher
+#      provides in the mod's linker namespace at runtime.
+#
+#  Override the source with -DPRELOADER_ANDROID_DIR=<path> for offline builds.
 # -----------------------------------------------------------------------------
-if(NOT DEFINED LL_SDK_DIR OR LL_SDK_DIR STREQUAL "")
-    set(LL_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/levilaunchroid-sdk")
-endif()
+include(FetchContent)
 
-if(NOT EXISTS "${LL_SDK_DIR}/pl/cpp/Mod.hpp")
-    message(FATAL_ERROR
-        "Levi Launchroid SDK headers not found at '${LL_SDK_DIR}'.\n"
-        "Pass -DLL_SDK_DIR=<dir containing pl/cpp/*.hpp> or run build.sh, "
-        "which fetches the SDK automatically.")
+if(DEFINED PRELOADER_ANDROID_DIR AND NOT PRELOADER_ANDROID_DIR STREQUAL "")
+    FetchContent_Declare(preloader_android SOURCE_DIR "${PRELOADER_ANDROID_DIR}")
+else()
+    FetchContent_Declare(
+        preloader_android
+        GIT_REPOSITORY https://github.com/LiteLDev/preloader-android.git
+        GIT_TAG main
+    )
 endif()
+FetchContent_MakeAvailable(preloader_android)
 
 add_library(forceenchant SHARED
     src/Mod.cpp
@@ -35,12 +46,12 @@ add_library(forceenchant SHARED
 )
 
 target_include_directories(forceenchant PRIVATE
-    "${LL_SDK_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
-# Android logging facility (__android_log_print).
-target_link_libraries(forceenchant PRIVATE log)
+# `preloader` brings its PUBLIC include dir (pl/**) and the exported pl:: symbols
+# (DT_NEEDED libpreloader.so). `log` is for our own __android_log_print calls.
+target_link_libraries(forceenchant PRIVATE preloader log)
 
 target_compile_options(forceenchant PRIVATE
     -O2
@@ -54,9 +65,6 @@ target_compile_options(forceenchant PRIVATE
 
 target_link_options(forceenchant PRIVATE
     -Wl,--gc-sections
-    # The preloader resolves pl::* symbols at load time.
-    -Wl,--allow-shlib-undefined
-    -Wl,-z,undefs
 )
 
 # Strip release builds.
@@ -64,7 +72,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release" OR NOT CMAKE_BUILD_TYPE)
     target_link_options(forceenchant PRIVATE -Wl,--strip-all)
 endif()
 
-# Produce exactly libforceenchant.so (no extra prefix/suffix juggling).
+# Produce exactly libforceenchant.so.
 set_target_properties(forceenchant PROPERTIES
     PREFIX "lib"
     OUTPUT_NAME "forceenchant"
